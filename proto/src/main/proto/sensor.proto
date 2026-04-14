@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "demo.kafka.grpc";
+option java_outer_classname = "SensorProto";
+
+package sensor;
+
+message SensorRequest {
+     string deviceId = 1;
+     double accX = 2;
+     double accY = 3;
+     double accZ = 4;
+     double gyroX = 5;
+     double gyroY = 6;
+     double gyroZ = 7;
+     double latitude = 8;
+     double longitude = 9;
+     int64 timestamp = 10;
+}
+
+message SensorResponse {
+     int32 status = 1;
+}
+
+service SensorService {
+     rpc CollectSensorData (stream SensorRequest) returns (SensorResponse);
+}
