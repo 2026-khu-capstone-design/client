@@ -39,6 +39,12 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+    }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -49,6 +55,12 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation("com.google.android.gms:play-services-location:21.3.0")
+
+    // gRPC
+    implementation(project(":proto"))
+    implementation("io.grpc:grpc-okhttp:1.58.0")
+    implementation("io.grpc:grpc-android:1.58.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -56,4 +68,9 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    implementation("io.grpc:grpc-stub:1.58.0")
+    implementation("io.grpc:grpc-kotlin-stub:1.4.0")
+    implementation("com.google.protobuf:protobuf-kotlin-lite:3.24.0")
+    implementation("com.google.protobuf:protobuf-javalite:3.24.0")
 }

@@ -11,6 +11,7 @@ import android.hardware.SensorManager
 import android.os.BatteryManager
 import android.os.Bundle
 import android.os.Looper
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -18,16 +19,20 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.capstone_design.ui.theme.Capstone_designTheme
 import com.google.android.gms.location.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private lateinit var fusedLocationClient: FusedLocationProviderClient
@@ -49,7 +54,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@SuppressLint("MissingPermission")
+@SuppressLint("MissingPermission", "HardwareIds")
 @Composable
 fun MainScreen(
     fusedLocationClient: FusedLocationProviderClient,
@@ -57,6 +62,10 @@ fun MainScreen(
 ) {
     val context = LocalContext.current
     val sensorManager = remember { context.getSystemService(Context.SENSOR_SERVICE) as SensorManager }
+    val deviceId = remember {
+        Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+    }
+    val scope = rememberCoroutineScope()
 
     // GPS 상태
     var latitude by remember { mutableDoubleStateOf(0.0) }
@@ -81,9 +90,14 @@ fun MainScreen(
 
     // 배터리
     var batteryLevel by remember { mutableIntStateOf(0) }
-    var batteryVoltage by remember { mutableIntStateOf(0) }    // mV
-    var batteryCurrent by remember { mutableFloatStateOf(0f) } // mA (소수점 포함)
-    var batteryPower by remember { mutableFloatStateOf(0f) }   // mW (소수점 포함)
+    var batteryVoltage by remember { mutableIntStateOf(0) }
+    var batteryCurrent by remember { mutableFloatStateOf(0f) }
+    var batteryPower by remember { mutableFloatStateOf(0f) }
+
+    // gRPC 설정
+    var grpcHost by remember { mutableStateOf("192.168.0.1") }
+    var grpcPort by remember { mutableStateOf("50051") }
+    var grpcStatus by remember { mutableStateOf("미연결") }
 
     LaunchedEffect(Unit) {
         val bm = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
@@ -92,8 +106,7 @@ fun MainScreen(
             batteryLevel   = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
             batteryVoltage = intent?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) ?: 0
             val currentMicroAmps = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW).toFloat()
-            batteryCurrent = currentMicroAmps / 1000f  // µA → mA
-            // mV × µA / 1,000,000 = mW (정밀도 유지)
+            batteryCurrent = currentMicroAmps / 1000f
             batteryPower = batteryVoltage.toFloat() * currentMicroAmps / 1_000_000f
             delay(500L)
         }
@@ -144,7 +157,7 @@ fun MainScreen(
                 permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
     }
 
-    // 센서 등록/해제 (SENSOR_DELAY_FASTEST = ~5ms)
+    // 센서 등록/해제
     DisposableEffect(isTracking) {
         if (isTracking) {
             sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let {
@@ -172,6 +185,50 @@ fun MainScreen(
         onDispose { fusedLocationClient.removeLocationUpdates(locationCallback) }
     }
 
+    // gRPC 스트리밍: isTracking 이 true 이면 500ms 마다 SensorRequest 전송
+    var grpcClient by remember { mutableStateOf<SensorGrpcClient?>(null) }
+
+    DisposableEffect(isTracking) {
+        if (isTracking) {
+            val port = grpcPort.toIntOrNull() ?: 50051
+            val client = SensorGrpcClient(grpcHost, port)
+            grpcClient = client
+            grpcStatus = "연결 중..."
+
+            val job = scope.launch {
+                try {
+                    val requestFlow = flow {
+                        while (true) {
+                            emit(
+                                buildSensorRequest(
+                                    deviceId = deviceId,
+                                    accX = accX, accY = accY, accZ = accZ,
+                                    gyroX = gyroX, gyroY = gyroY, gyroZ = gyroZ,
+                                    latitude = latitude, longitude = longitude
+                                )
+                            )
+                            delay(500L)
+                        }
+                    }
+                    val status = client.streamSensorData(requestFlow)
+                    grpcStatus = "완료 (status=$status)"
+                } catch (e: Exception) {
+                    grpcStatus = "오류: ${e.message}"
+                }
+            }
+
+            onDispose {
+                job.cancel()
+                client.shutdown()
+                grpcClient = null
+                grpcStatus = "미연결"
+            }
+        } else {
+            onDispose { }
+        }
+    }
+
+    // UI
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -181,6 +238,36 @@ fun MainScreen(
     ) {
         Text("센서 데이터", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
+
+        // gRPC 서버 설정 카드
+        SensorCard(title = "gRPC 서버 설정") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = grpcHost,
+                    onValueChange = { grpcHost = it },
+                    label = { Text("Host") },
+                    modifier = Modifier.weight(1f),
+                    enabled = !isTracking,
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = grpcPort,
+                    onValueChange = { grpcPort = it },
+                    label = { Text("Port") },
+                    modifier = Modifier.width(100.dp),
+                    enabled = !isTracking,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            DataRow("상태", grpcStatus)
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         // GPS 카드
         SensorCard(title = "GPS") {

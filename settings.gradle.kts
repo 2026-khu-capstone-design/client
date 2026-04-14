@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "capstone_design"
 include(":app")
+include(":proto")
