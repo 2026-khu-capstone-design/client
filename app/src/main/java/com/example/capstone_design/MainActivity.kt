@@ -94,6 +94,10 @@ fun MainScreen(
     var batteryCurrent by remember { mutableFloatStateOf(0f) }
     var batteryPower by remember { mutableFloatStateOf(0f) }
 
+    // 배터리 누적 그래프
+    val batteryHistory = remember { androidx.compose.runtime.mutableStateListOf<BatteryDataPoint>() }
+    var trackingStartTime by remember { mutableLongStateOf(0L) }
+
     // gRPC 설정
     var grpcHost by remember { mutableStateOf("192.168.0.1") }
     var grpcPort by remember { mutableStateOf("50051") }
@@ -108,6 +112,18 @@ fun MainScreen(
             val currentMicroAmps = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW).toFloat()
             batteryCurrent = currentMicroAmps / 1000f
             batteryPower = batteryVoltage.toFloat() * currentMicroAmps / 1_000_000f
+
+            if (isTracking) {
+                val elapsed = (System.currentTimeMillis() - trackingStartTime) / 1000f
+                batteryHistory.add(
+                    BatteryDataPoint(
+                        elapsedSeconds = elapsed,
+                        level = batteryLevel,
+                        currentMa = kotlin.math.abs(batteryCurrent),
+                        powerMw = kotlin.math.abs(batteryPower)
+                    )
+                )
+            }
             delay(500L)
         }
     }
@@ -322,6 +338,22 @@ fun MainScreen(
             DataRow("전력 소모", "${"%.2f".format(kotlin.math.abs(batteryPower))} mW")
         }
 
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 배터리 소모 누적 그래프
+        SensorCard(title = "배터리 소모 그래프") {
+            BatteryGraph(dataPoints = batteryHistory.toList())
+            if (batteryHistory.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                androidx.compose.material3.TextButton(
+                    onClick = { batteryHistory.clear() },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("그래프 초기화", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(24.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -337,7 +369,13 @@ fun MainScreen(
             }
 
             Button(
-                onClick = { isTracking = !isTracking },
+                onClick = {
+                    if (!isTracking) {
+                        batteryHistory.clear()
+                        trackingStartTime = System.currentTimeMillis()
+                    }
+                    isTracking = !isTracking
+                },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isTracking) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.primary
