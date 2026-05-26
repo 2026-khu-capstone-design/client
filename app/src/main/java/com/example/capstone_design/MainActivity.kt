@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,6 +37,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 
+enum class AppScreen { SENSOR, MONITOR }
+
 class MainActivity : ComponentActivity() {
     private lateinit var fusedLocationClient: FusedLocationProviderClient
 
@@ -43,11 +48,35 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             Capstone_designTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    MainScreen(
-                        fusedLocationClient = fusedLocationClient,
-                        modifier = Modifier.padding(innerPadding)
-                    )
+                var currentScreen by remember { mutableStateOf(AppScreen.SENSOR) }
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    bottomBar = {
+                        NavigationBar {
+                            NavigationBarItem(
+                                selected = currentScreen == AppScreen.SENSOR,
+                                onClick = { currentScreen = AppScreen.SENSOR },
+                                icon = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null) },
+                                label = { Text("센서 전송") }
+                            )
+                            NavigationBarItem(
+                                selected = currentScreen == AppScreen.MONITOR,
+                                onClick = { currentScreen = AppScreen.MONITOR },
+                                icon = { Icon(Icons.Default.Notifications, contentDescription = null) },
+                                label = { Text("실시간 수신") }
+                            )
+                        }
+                    }
+                ) { innerPadding ->
+                    when (currentScreen) {
+                        AppScreen.SENSOR -> MainScreen(
+                            fusedLocationClient = fusedLocationClient,
+                            modifier = Modifier.padding(innerPadding)
+                        )
+                        AppScreen.MONITOR -> WebSocketScreen(
+                            modifier = Modifier.padding(innerPadding)
+                        )
+                    }
                 }
             }
         }

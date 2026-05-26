@@ -73,4 +73,10 @@ dependencies {
     implementation("io.grpc:grpc-kotlin-stub:1.4.0")
     implementation("com.google.protobuf:protobuf-kotlin-lite:3.24.0")
     implementation("com.google.protobuf:protobuf-javalite:3.24.0")
+
+    // WebSocket (OkHttp - explicit for STOMP client)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Material Icons
+    implementation("androidx.compose.material:material-icons-extended")
 }
