@@ -3,13 +3,13 @@ package com.example.capstone_design
 import demo.kafka.grpc.SensorRequest
 import demo.kafka.grpc.SensorServiceGrpcKt
 import io.grpc.ManagedChannel
-import io.grpc.ManagedChannelBuilder
+import io.grpc.okhttp.OkHttpChannelBuilder
 import kotlinx.coroutines.flow.Flow
 import java.util.concurrent.TimeUnit
 
 class SensorGrpcClient(host: String, port: Int) {
 
-    private val channel: ManagedChannel = ManagedChannelBuilder
+    private val channel: ManagedChannel = OkHttpChannelBuilder
         .forAddress(host, port)
         .usePlaintext()
         .build()

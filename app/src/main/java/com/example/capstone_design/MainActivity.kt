@@ -128,8 +128,8 @@ fun MainScreen(
     var trackingStartTime by remember { mutableLongStateOf(0L) }
 
     // gRPC 설정
-    var grpcHost by remember { mutableStateOf("192.168.0.1") }
-    var grpcPort by remember { mutableStateOf("50051") }
+    var grpcHost by remember { mutableStateOf("223.130.139.89") }
+    var grpcPort by remember { mutableStateOf("9090") }
     var grpcStatus by remember { mutableStateOf("미연결") }
 
     LaunchedEffect(Unit) {
@@ -243,6 +243,7 @@ fun MainScreen(
             val job = scope.launch {
                 try {
                     val requestFlow = flow {
+                        grpcStatus = "스트리밍 중..."
                         while (true) {
                             emit(
                                 buildSensorRequest(
