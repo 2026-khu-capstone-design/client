@@ -33,9 +33,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.capstone_design.ui.theme.Capstone_designTheme
 import com.google.android.gms.location.*
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 enum class AppScreen { SENSOR, MONITOR }
 
@@ -131,6 +136,17 @@ fun MainScreen(
     var grpcHost by remember { mutableStateOf("223.130.139.89") }
     var grpcPort by remember { mutableStateOf("9090") }
     var grpcStatus by remember { mutableStateOf("미연결") }
+    var grpcIntervalMs by remember { mutableLongStateOf(500L) }
+    var grpcIntervalInput by remember { mutableStateOf("500") }
+
+    // 센서 샘플링 설정
+    var sensorDelayMode by remember { mutableIntStateOf(SensorManager.SENSOR_DELAY_FASTEST) }
+
+    // 30초 테스트
+    var timedTestCountdown by remember { mutableIntStateOf(-1) }
+    var countdownJob by remember { mutableStateOf<Job?>(null) }
+    var lastTestSummary by remember { mutableStateOf("") }
+    var lastTestPath by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         val bm = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
@@ -203,13 +219,13 @@ fun MainScreen(
     }
 
     // 센서 등록/해제
-    DisposableEffect(isTracking) {
+    DisposableEffect(isTracking, sensorDelayMode) {
         if (isTracking) {
             sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let {
-                sensorManager.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_FASTEST)
+                sensorManager.registerListener(sensorListener, it, sensorDelayMode)
             }
             sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)?.let {
-                sensorManager.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_FASTEST)
+                sensorManager.registerListener(sensorListener, it, sensorDelayMode)
             }
         } else {
             sensorManager.unregisterListener(sensorListener)
@@ -253,7 +269,7 @@ fun MainScreen(
                                     latitude = latitude, longitude = longitude
                                 )
                             )
-                            delay(500L)
+                            delay(grpcIntervalMs)
                         }
                     }
                     val status = client.streamSensorData(requestFlow)
@@ -308,6 +324,58 @@ fun MainScreen(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("전송 주기", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(60.dp))
+                OutlinedTextField(
+                    value = grpcIntervalInput,
+                    onValueChange = {
+                        grpcIntervalInput = it
+                        it.toLongOrNull()?.let { v -> if (v > 0) grpcIntervalMs = v }
+                    },
+                    label = { Text("ms") },
+                    modifier = Modifier.width(100.dp),
+                    enabled = !isTracking,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("센서 샘플링", style = MaterialTheme.typography.bodyMedium)
+            Spacer(modifier = Modifier.height(4.dp))
+            val sensorDelayOptions = listOf(
+                "최고속" to SensorManager.SENSOR_DELAY_FASTEST,
+                "게임" to SensorManager.SENSOR_DELAY_GAME,
+                "UI" to SensorManager.SENSOR_DELAY_UI,
+                "보통" to SensorManager.SENSOR_DELAY_NORMAL
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                sensorDelayOptions.forEach { (label, mode) ->
+                    val selected = sensorDelayMode == mode
+                    if (selected) {
+                        Button(
+                            onClick = { sensorDelayMode = mode },
+                            modifier = Modifier.weight(1f),
+                            enabled = !isTracking,
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                        ) { Text(label, style = MaterialTheme.typography.labelSmall) }
+                    } else {
+                        OutlinedButton(
+                            onClick = { sensorDelayMode = mode },
+                            modifier = Modifier.weight(1f),
+                            enabled = !isTracking,
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                        ) { Text(label, style = MaterialTheme.typography.labelSmall) }
+                    }
+                }
             }
             Spacer(modifier = Modifier.height(4.dp))
             DataRow("상태", grpcStatus)
@@ -370,6 +438,37 @@ fun MainScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // 30초 테스트 카운트다운
+        if (timedTestCountdown >= 0) {
+            SensorCard(title = "30초 배터리 테스트") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("측정 중...", style = MaterialTheme.typography.bodyMedium)
+                    Text("${timedTestCountdown}초", style = MaterialTheme.typography.headlineMedium)
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        // 테스트 결과
+        if (lastTestSummary.isNotEmpty()) {
+            SensorCard(title = "마지막 테스트 결과") {
+                Text(lastTestSummary, style = MaterialTheme.typography.bodySmall)
+                if (lastTestPath.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "저장: $lastTestPath",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
         // 배터리 소모 누적 그래프
         SensorCard(title = "배터리 소모 그래프") {
             BatteryGraph(dataPoints = batteryHistory.toList())
@@ -413,8 +512,85 @@ fun MainScreen(
             ) {
                 Text(if (isTracking) "중지" else "시작")
             }
+
+            Button(
+                onClick = {
+                    countdownJob?.cancel()
+                    batteryHistory.clear()
+                    lastTestSummary = ""
+                    lastTestPath = ""
+                    trackingStartTime = System.currentTimeMillis()
+                    isTracking = true
+                    timedTestCountdown = 30
+                    countdownJob = scope.launch {
+                        for (i in 30 downTo 1) {
+                            timedTestCountdown = i
+                            delay(1000L)
+                        }
+                        isTracking = false
+                        timedTestCountdown = -1
+                        val (summary, path) = saveBatteryTestResult(
+                            context, batteryHistory.toList(), grpcIntervalMs, sensorDelayMode
+                        )
+                        lastTestSummary = summary
+                        lastTestPath = path
+                    }
+                },
+                enabled = !isTracking,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiary
+                )
+            ) {
+                Text("30초 테스트")
+            }
         }
     }
+}
+
+fun saveBatteryTestResult(
+    context: Context,
+    dataPoints: List<BatteryDataPoint>,
+    grpcIntervalMs: Long,
+    sensorDelayMode: Int
+): Pair<String, String> {
+    if (dataPoints.isEmpty()) return Pair("데이터 없음", "")
+
+    val delayLabel = when (sensorDelayMode) {
+        SensorManager.SENSOR_DELAY_FASTEST -> "fastest"
+        SensorManager.SENSOR_DELAY_GAME -> "game"
+        SensorManager.SENSOR_DELAY_UI -> "ui"
+        SensorManager.SENSOR_DELAY_NORMAL -> "normal"
+        else -> "custom"
+    }
+
+    val avgCurrent = dataPoints.map { it.currentMa.toDouble() }.average().toFloat()
+    val avgPower = dataPoints.map { it.powerMw.toDouble() }.average().toFloat()
+    val startLevel = dataPoints.first().level
+    val endLevel = dataPoints.last().level
+    val duration = dataPoints.last().elapsedSeconds
+
+    val summary = buildString {
+        appendLine("기간: ${"%.1f".format(duration)}초")
+        appendLine("평균 전류: ${"%.2f".format(avgCurrent)} mA")
+        appendLine("평균 전력: ${"%.2f".format(avgPower)} mW")
+        appendLine("배터리: $startLevel% → $endLevel% (${endLevel - startLevel}%)")
+        append("gRPC 주기: ${grpcIntervalMs}ms | 센서: $delayLabel")
+    }
+
+    val dir = File(context.filesDir, "battery_tests")
+    dir.mkdirs()
+    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+    val filename = "battery_grpc${grpcIntervalMs}ms_sensor${delayLabel}_$timestamp.csv"
+    val file = File(dir, filename)
+
+    file.bufferedWriter().use { writer ->
+        writer.write("elapsed_sec,battery_pct,current_ma,power_mw\n")
+        dataPoints.forEach { point ->
+            writer.write("${point.elapsedSeconds},${point.level},${point.currentMa},${point.powerMw}\n")
+        }
+    }
+
+    return Pair(summary, file.absolutePath)
 }
 
 @Composable
